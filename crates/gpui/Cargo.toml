@@ -18,6 +18,7 @@ workspace = true
 
 [features]
 default = ["font-kit", "wayland", "x11", "windows-manifest"]
+wgpu = ["dep:wgpu"]
 test-support = [
     "leak-detection",
     "collections/test-support",
@@ -101,6 +102,7 @@ pollster.workspace = true
 url.workspace = true
 uuid.workspace = true
 web-time.workspace = true
+wgpu = { workspace = true, optional = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
@@ -156,6 +158,10 @@ proptest = { workspace = true }
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 http_client = { workspace = true, features = ["test-support"] }
 reqwest_client = { workspace = true, features = ["test-support"] }
+gpui_wgpu.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dev-dependencies]
+gpui_linux.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dev-dependencies]
 wasm-bindgen = { workspace = true }
@@ -239,3 +245,7 @@ path = "examples/grid_layout.rs"
 [[example]]
 name = "mouse_pressure"
 path = "examples/mouse_pressure.rs"
+
+[[example]]
+name = "surface"
+path = "examples/surface.rs"

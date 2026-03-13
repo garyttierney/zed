@@ -454,7 +454,7 @@ fn wl_output_version(version: u32) -> u32 {
 }
 
 impl WaylandClient {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(gpu_context: gpui_wgpu::GpuContext) -> Self {
         let conn = Connection::connect_to_env().unwrap();
 
         let (globals, event_queue) = registry_queue_init::<WaylandClientStatePtr>(&conn).unwrap();
@@ -520,7 +520,6 @@ impl WaylandClient {
             .unwrap();
 
         let compositor_gpu = detect_compositor_gpu();
-        let gpu_context = Rc::new(RefCell::new(None));
 
         let seat = seat.unwrap();
         let globals = Globals::new(

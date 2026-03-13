@@ -2,3 +2,5 @@
 mod linux;
 
 pub use linux::current_platform;
+#[cfg(any(feature = "wayland", feature = "x11"))]
+pub use linux::current_platform_with_gpu;
