@@ -1,17 +1,41 @@
 use crate::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    ObjectFit, Pixels, Style, StyleRefinement, Styled, Window,
+    App, Bounds, DevicePixels, Element, ElementId, GlobalElementId, InspectorElementId,
+    IntoElement, LayoutId, ObjectFit, Pixels, Size, Style, StyleRefinement, Styled, Window,
 };
 #[cfg(target_os = "macos")]
 use core_video::pixel_buffer::CVPixelBuffer;
 use refineable::Refineable;
 
 /// A source of a surface's content.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum SurfaceSource {
     /// A macOS image buffer from CoreVideo
     #[cfg(target_os = "macos")]
     Surface(CVPixelBuffer),
+
+    /// A WGPU texture view that is resident on the GPU device.
+    #[cfg(feature = "wgpu")]
+    Texture {
+        texture_view: wgpu::TextureView,
+        texture_format: wgpu::TextureFormat,
+        texture_size: Size<DevicePixels>,
+    },
+}
+
+impl SurfaceSource {
+    fn texture_size(&self) -> Size<DevicePixels> {
+        match self {
+            #[cfg(target_os = "macos")]
+            SurfaceSource::Surface(buffer) => crate::size(
+                DevicePixels::from(buffer.get_width() as i32),
+                DevicePixels::from(buffer.get_height() as i32),
+            ),
+            #[cfg(feature = "wgpu")]
+            SurfaceSource::Texture { texture_size, .. } => *texture_size,
+            #[cfg(not(any(target_os = "macos", feature = "wgpu")))]
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -21,7 +45,7 @@ impl From<CVPixelBuffer> for SurfaceSource {
     }
 }
 
-/// A surface element.
+/// A surface element that displays GPU content from a [`SurfaceSource`].
 pub struct Surface {
     source: SurfaceSource,
     object_fit: ObjectFit,
@@ -29,7 +53,6 @@ pub struct Surface {
 }
 
 /// Create a new surface element.
-#[cfg(target_os = "macos")]
 pub fn surface(source: impl Into<SurfaceSource>) -> Surface {
     Surface {
         source: source.into(),
@@ -39,7 +62,7 @@ pub fn surface(source: impl Into<SurfaceSource>) -> Surface {
 }
 
 impl Surface {
-    /// Set the object fit for the image.
+    /// Set the object fit for the surface.
     pub fn object_fit(mut self, object_fit: ObjectFit) -> Self {
         self.object_fit = object_fit;
         self
@@ -86,23 +109,15 @@ impl Element for Surface {
         &mut self,
         _global_id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] window: &mut Window,
+        window: &mut Window,
         _: &mut App,
     ) {
-        match &self.source {
-            #[cfg(target_os = "macos")]
-            SurfaceSource::Surface(surface) => {
-                let size = crate::size(surface.get_width().into(), surface.get_height().into());
-                let new_bounds = self.object_fit.get_bounds(bounds, size);
-                // TODO: Add support for corner_radii
-                window.paint_surface(new_bounds, surface.clone());
-            }
-            #[allow(unreachable_patterns)]
-            _ => {}
-        }
+        let texture_size = self.source.texture_size();
+        let new_bounds = self.object_fit.get_bounds(bounds, texture_size);
+        window.paint_surface(new_bounds, self.source.clone());
     }
 }
 

@@ -1333,3 +1333,27 @@ fn fs_surface(input: SurfaceVarying) -> @location(0) vec4<f32> {
 
     return ycbcr_to_RGB * y_cb_cr;
 }
+
+@group(1) @binding(0) var<uniform> surface_rgba_locals: SurfaceParams;
+@group(1) @binding(1) var t_surface_rgba: texture_2d<f32>;
+@group(1) @binding(2) var s_surface_rgba: sampler;
+
+@vertex
+fn vs_surface_rgba(@builtin(vertex_index) vertex_id: u32) -> SurfaceVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+
+    var out = SurfaceVarying();
+    out.position = to_device_position(unit_vertex, surface_rgba_locals.bounds);
+    out.texture_position = unit_vertex;
+    out.clip_distances = distance_from_clip_rect(unit_vertex, surface_rgba_locals.bounds, surface_rgba_locals.content_mask);
+    return out;
+}
+
+@fragment
+fn fs_surface_rgba(input: SurfaceVarying) -> @location(0) vec4<f32> {
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+
+    return textureSampleLevel(t_surface_rgba, s_surface_rgba, input.texture_position, 1.0);
+}

@@ -298,7 +298,7 @@ impl X11ClientStatePtr {
 pub(crate) struct X11Client(pub(crate) Rc<RefCell<X11ClientState>>);
 
 impl X11Client {
-    pub(crate) fn new() -> anyhow::Result<Self> {
+    pub(crate) fn new(gpu_context: gpui_wgpu::GpuContext) -> anyhow::Result<Self> {
         let event_loop = EventLoop::try_new()?;
 
         let (common, main_receiver) = LinuxCommon::new(event_loop.get_signal());
@@ -502,7 +502,7 @@ impl X11Client {
             last_mouse_button: None,
             last_location: Point::new(px(0.0), px(0.0)),
             current_count: 0,
-            gpu_context: Rc::new(RefCell::new(None)),
+            gpu_context,
             compositor_gpu,
             scale_factor,
 

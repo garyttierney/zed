@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::num::NonZeroU64;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -84,6 +85,7 @@ struct WgpuPipelines {
     poly_sprites: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surfaces: wgpu::RenderPipeline,
+    surface_rgba: wgpu::RenderPipeline,
 }
 
 struct WgpuBindGroupLayouts {
@@ -91,6 +93,7 @@ struct WgpuBindGroupLayouts {
     instances: wgpu::BindGroupLayout,
     instances_with_texture: wgpu::BindGroupLayout,
     surfaces: wgpu::BindGroupLayout,
+    surface_rgba: wgpu::BindGroupLayout,
 }
 
 /// Shared GPU context reference, used to coordinate device recovery across multiple windows.
@@ -587,11 +590,46 @@ impl WgpuRenderer {
             ],
         });
 
+        let surface_rgba = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("surface_rgba_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZeroU64::new(
+                            std::mem::size_of::<SurfaceParams>() as u64
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
         WgpuBindGroupLayouts {
             globals,
             instances,
             instances_with_texture,
             surfaces,
+            surface_rgba,
         }
     }
 
@@ -830,7 +868,23 @@ impl WgpuRenderer {
             &layouts.globals,
             &layouts.surfaces,
             wgpu::PrimitiveTopology::TriangleStrip,
-            &[Some(color_target)],
+            &[Some(color_target.clone())],
+            1,
+            &shader_module,
+        );
+
+        let surface_rgba = create_pipeline(
+            "surface_rgba",
+            "vs_surface_rgba",
+            "fs_surface_rgba",
+            &layouts.globals,
+            &layouts.surface_rgba,
+            wgpu::PrimitiveTopology::TriangleStrip,
+            &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
             1,
             &shader_module,
         );
@@ -845,6 +899,7 @@ impl WgpuRenderer {
             subpixel_sprites,
             poly_sprites,
             surfaces,
+            surface_rgba,
         }
     }
 
@@ -1017,6 +1072,14 @@ impl WgpuRenderer {
 
     pub fn sprite_atlas(&self) -> &Arc<WgpuAtlas> {
         &self.atlas
+    }
+
+    pub fn device(&self) -> &Arc<wgpu::Device> {
+        &self.resources().device
+    }
+
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
+        &self.resources().queue
     }
 
     pub fn supports_dual_source_blending(&self) -> bool {
@@ -1238,9 +1301,69 @@ impl WgpuRenderer {
                                 &mut instance_offset,
                                 &mut pass,
                             ),
-                        PrimitiveBatch::Surfaces(_surfaces) => {
-                            // Surfaces are macOS-only for video playback
-                            // Not implemented for Linux/wgpu
+                        PrimitiveBatch::Surfaces(range) => {
+                            for surface in &scene.surfaces[range] {
+                                let (texture_view, _texture_format) = match &surface.source {
+                                    gpui::SurfaceSource::Texture {
+                                        texture_view,
+                                        texture_format,
+                                        ..
+                                    } => (texture_view.clone(), *texture_format),
+                                    #[allow(unreachable_patterns)]
+                                    _ => continue,
+                                };
+                                let surface_params = SurfaceParams {
+                                    bounds: surface.bounds.into(),
+                                    content_mask: surface.content_mask.bounds.into(),
+                                };
+                                let resources = self.resources();
+                                let params_buffer = resources.device.create_buffer_init(
+                                    &wgpu::util::BufferInitDescriptor {
+                                        label: Some("surface_params"),
+                                        contents: bytemuck::bytes_of(&surface_params),
+                                        usage: wgpu::BufferUsages::UNIFORM,
+                                    },
+                                );
+                                let sampler =
+                                    resources.device.create_sampler(&wgpu::SamplerDescriptor {
+                                        label: Some("surface_sampler"),
+                                        mag_filter: wgpu::FilterMode::Linear,
+                                        min_filter: wgpu::FilterMode::Linear,
+                                        ..Default::default()
+                                    });
+                                let bind_group = resources.device.create_bind_group(
+                                    &wgpu::BindGroupDescriptor {
+                                        label: Some("surface_bind_group"),
+                                        layout: &resources.bind_group_layouts.surface_rgba,
+                                        entries: &[
+                                            wgpu::BindGroupEntry {
+                                                binding: 0,
+                                                resource: wgpu::BindingResource::Buffer(
+                                                    wgpu::BufferBinding {
+                                                        buffer: &params_buffer,
+                                                        offset: 0,
+                                                        size: None,
+                                                    },
+                                                ),
+                                            },
+                                            wgpu::BindGroupEntry {
+                                                binding: 1,
+                                                resource: wgpu::BindingResource::TextureView(
+                                                    &texture_view,
+                                                ),
+                                            },
+                                            wgpu::BindGroupEntry {
+                                                binding: 2,
+                                                resource: wgpu::BindingResource::Sampler(&sampler),
+                                            },
+                                        ],
+                                    },
+                                );
+                                pass.set_pipeline(&resources.pipelines.surface_rgba);
+                                pass.set_bind_group(0, &resources.globals_bind_group, &[]);
+                                pass.set_bind_group(1, &bind_group, &[]);
+                                pass.draw(0..4, 0..1);
+                            }
                             true
                         }
                     };
