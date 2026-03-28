@@ -66,11 +66,9 @@ pub fn current_platform(headless: bool) -> Rc<dyn gpui::Platform> {
 /// Use this when you need to share a wgpu `Instance`, `Adapter`, `Device`,
 /// and `Queue` with external wgpu-based libraries.
 #[cfg(any(feature = "wayland", feature = "x11"))]
-pub fn current_platform_with_gpu(gpu_context: gpui_wgpu::WgpuContext) -> Rc<dyn gpui::Platform> {
+pub fn current_platform_with_gpu(gpu_context: gpui_wgpu::GpuContext) -> Rc<dyn gpui::Platform> {
     #[cfg(feature = "x11")]
     use anyhow::Context as _;
-
-    let gpu_context: gpui_wgpu::GpuContext = Rc::new(RefCell::new(Some(gpu_context)));
 
     match gpui::guess_compositor() {
         #[cfg(feature = "wayland")]
