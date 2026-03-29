@@ -23,8 +23,6 @@ pub(crate) use wayland::*;
 #[cfg(feature = "x11")]
 pub(crate) use x11::*;
 
-#[cfg(any(feature = "wayland", feature = "x11"))]
-use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Returns the default platform implementation for the current OS.
@@ -39,7 +37,7 @@ pub fn current_platform(headless: bool) -> Rc<dyn gpui::Platform> {
     }
 
     #[cfg(any(feature = "wayland", feature = "x11"))]
-    let gpu_context: gpui_wgpu::GpuContext = Rc::new(RefCell::new(None));
+    let gpu_context = gpui_wgpu::GpuContext::new(gpui_wgpu::GpuContextConfig::default());
 
     match gpui::guess_compositor() {
         #[cfg(feature = "wayland")]

@@ -1273,11 +1273,7 @@ impl PlatformWindow for WaylandWindow {
     fn is_subpixel_rendering_supported(&self) -> bool {
         let client = self.borrow().client.get_client();
         let state = client.borrow();
-        state
-            .gpu_context
-            .borrow()
-            .as_ref()
-            .is_some_and(|ctx| ctx.supports_dual_source_blending())
+        state.gpu_context.supports_dual_source_blending()
     }
 
     fn minimize(&self) {

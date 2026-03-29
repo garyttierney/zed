@@ -1518,11 +1518,7 @@ impl PlatformWindow for X11Window {
             .upgrade()
             .map(|ref_cell| {
                 let state = ref_cell.borrow();
-                state
-                    .gpu_context
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|ctx| ctx.supports_dual_source_blending())
+                state.gpu_context.supports_dual_source_blending()
             })
             .unwrap_or_default()
     }
